@@ -1,4 +1,4 @@
-# Autonomous Discovery of Molecular Training Distributions
+# Autonomous discovery of training distributions for controllable molecular exploration
 
 Molecular generative models are usually trained on fixed, human-curated datasets.  
 In this project, the dataset itself becomes the object of optimization.
