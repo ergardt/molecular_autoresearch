@@ -1,8 +1,0 @@
-commit	score	dataset	phase	strategy	fraction	vocab_size	validity	mean_qed	pct_lipinski	scaffold_entropy	int_div	status	description
-ccf7103	0.7686	chembl_clean	baseline	-	0	136	0.887	0.661	0.935	0.979	0.885	keep	baseline: drug-like ChEMBL 329K
-ccf7103	0.7779	mixed_zinc_nondrug_2pct	A	random	0.02	137	0.893	0.652	0.926	0.979	0.890	discard	mean_qed and pct_lipinski below baseline
-ccf7103	0.7723	mixed_coconut_nondrug_2pct	A	random	0.02	159	0.893	0.653	0.907	0.976	0.886	discard	mean_qed and pct_lipinski below baseline
-ccf7103	0.7778	mixed_zinc_nondrug_5pct	A	random	0.05	137	0.897	0.646	0.899	0.980	0.885	discard	mean_qed and pct_lipinski below baseline
-ccf7103	0.7684	mixed_hmdb_nondrug_2pct	A	random	0.02	139	0.886	0.650	0.918	0.972	0.892	discard	mean_qed and pct_lipinski below baseline
-ccf7103	0.7657	mixed_coconut_nondrug_5pct	A	random	0.05	164	0.883	0.637	0.901	0.972	0.892	discard	mean_qed and pct_lipinski below baseline
-ccf7103	0.7673	mixed_hmdb_nondrug_5pct	A	random	0.05	147	0.902	0.622	0.887	0.958	0.888	discard	mean_qed and pct_lipinski below baseline
