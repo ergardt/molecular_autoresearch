@@ -1,0 +1,18 @@
+# Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+.venv
+
+# Data (raw and cleaned — stored on cluster)
+data/
+
+# Experiment artifacts (logs stay on cluster)
+*.log
+
+# Tool files
+.aider*
+*.DS_Store
