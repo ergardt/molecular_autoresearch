@@ -12,6 +12,7 @@ data/
 
 # Experiment artifacts (logs stay on cluster)
 *.log
+*.csv
 
 # Tool files
 .aider*

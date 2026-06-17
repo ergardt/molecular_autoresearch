@@ -1,175 +1,260 @@
-# Exp 2 Var 2 — Контролируемое подмешивание нелекарственных соединений
+# molgen-autoresearch: non-ChEMBL additive experiment
 
-## Гипотеза
+Autonomous experimentation on SMILES-based molecular generation.
 
-> Контролируемое подмешивание нелекарственных (non-drug-like) соединений в тренировочный датасет улучшает разнообразие генерируемых молекул, не ухудшая их ключевые свойства (validity, QED, Lipinski).
+**Hypothesis**: adding a small fraction of non-ChEMBL molecules (molecules from sources other than ChEMBL) to the ChEMBL training dataset improves generative model diversity without breaking drug-likeness control metrics.
 
-## Принятые решения
+The model is frozen at N_LAYER=4, N_EMBD=256. Training data = `chembl_500k_seed0.csv` (100%) + variable additive subset from non-ChEMBL sources.
 
-| # | Решение | Выбрано |
-|---|---------|---------|
-| 1 | Источники non-drug | Все три: COCONUT, HMDB, ZINC |
-| 2 | Критерий «нелекарственность» | Без фильтра — всё, что не ChEMBL |
-| 3 | Доли подмешивания | 0%, 10%, 25%, 50%, 75%, 100% (6 точек) |
-| 4 | Размер датасета | Фиксировать ChEMBL-компоненту (500K), non-drug доля от неё |
-| 5 | Дедупликация | Удалять пересечение ChEMBL ∩ non-drug, записать размер |
-| 6 | Стратегия источников | Гибрид: сначала склеенный пул (6 долей), потом лучшая доля по каждому источнику отдельно |
-| 7 | Гиперпараметры | Без изменений (n_layer=4, n_embd=256, n_head=4, epochs=20, bs=512, lr=3e-4) |
-| 8 | Критерий успеха | score ≥ +5% И validity/QED не упали >5% относительно бейслайна |
-| 9 | Повторяемость | 3 seed-а: 42, 123, 456 |
+---
 
-## Данные
+## Setup
 
-| Источник | Размер | Роль |
-|----------|--------|------|
-| ChEMBL | ~2.8M | Базовый drug-like датасет (фиксированная выборка 500K) |
-| COCONUT | ~738K | Натуральные продукты |
-| HMDB | ~114K | Метаболиты |
-| ZINC | ~7.5M | Non-drug-like соединения |
+To set up a new experiment, work with the user to:
 
-## Фаза 1: Подготовка данных
+1. **Branch**: `run_exp_2_var_2` — current working branch.
+2. **Verify data exists** on the remote node:
+   ```bash
+   ssh aichem "ls -lh /mnt/tank/scratch/aergardt/autoresearch/data/"
+   ```
+   Required files:
+   - `chembl_500k_seed0.csv` — drug-like ChEMBL molecules (frozen baseline)
+   - `zinc_vs_chembl_full_QED.csv` — ZINC molecules with smiles, tanimoto_sum, scaffold_sum, QED
+   - `coconut_smiles.csv` — COCONUT natural/isolated compounds
+   - `hmdb_smiles.csv` — HMDB human metabolites
 
-### 1.1 Канонизация всех источников
+3. **Initialize results.tsv** locally with a header row.
+4. **Confirm and go**.
 
-```bash
-# ChEMBL — drug-like фильтр (базовый)
-python common/prepare_data.py \
-  --input data/chembl.csv \
-  --output data/chembl_clean.csv \
-  --max-len 128
+---
 
-# COCONUT — только валидность
-python common/prepare_data.py \
-  --input data/coconut.csv \
-  --output data/coconut_clean.csv \
-  --no-druglike \
-  --max-len 128
+## Experimentation
 
-# HMDB — только валидность
-python common/prepare_data.py \
-  --input data/hmdb.csv \
-  --output data/hmdb_clean.csv \
-  --no-druglike \
-  --max-len 128
+**Workflow** — hybrid setup:
+- **Prepare additive subsets locally**: sample molecules from source by strategy, save to CSV
+- **Transfer to remote**: `scp <dataset>.csv aichem:/mnt/tank/scratch/aergardt/autoresearch/data/`
+- **Merge with ChEMBL on remote**: concatenate additive CSV with chembl_500k_seed0.csv
+- **Run on remote**: execute on GPU cluster node (`aichem`) — **train.py is read-only**
+- **Retrieve results**: fetch logs back to analyze
 
-# ZINC — только валидность
-python common/prepare_data.py \
-  --input data/zinc_vs_chembl_full_QED.csv \
-  --output data/zinc_clean.csv \
-  --no-druglike \
-  --max-len 128
+**What you CAN do:**
+- Change the training dataset via `--data` argument
+- Vary the additive fraction (2%, 5%, 10%, 25%, 50% relative to ChEMBL)
+- Select molecules by strategy (see Selection strategies below)
+- Save checkpoints with `--save <dir>`
+- Generate molecules from checkpoints with `--load <dir>`
+
+**What you CANNOT do:**
+- Modify `train.py` — model architecture, hyperparameters, and score formula are frozen (N_LAYER=4, N_EMBD=256, EPOCHS=20, LR=3e-4, score = validity × scaffold_entropy × int_div)
+- Install new packages beyond `pyproject.toml`
+
+**Decision metric**: `score = validity × scaffold_entropy × int_div` — computed post-hoc from the final epoch metrics. Both diversity components (scaffold_entropy and int_div) are weighted equally.
+
+**Control metrics** (must NOT fall below baseline):
+- `validity` ≥ baseline
+- `mean_qed` ≥ baseline
+- `pct_lipinski` ≥ baseline
+
+**Simplicity criterion**: all else being equal, simpler is better. An interpretable selection criterion beats an opaque weighted combination if results are similar.
+
+---
+
+## Additive sources
+
+### 1. ZINC — structurally diverse, scored against ChEMBL
+
+`zinc_vs_chembl_full_QED.csv`
+
+| Column | Type | Meaning |
+|--------|------|---------|
+| smiles | str | canonical SMILES |
+| tanimoto_sum | float | sum of Tanimoto similarities (Morgan FP, radius=2) to all ChEMBL molecules |
+| scaffold_sum | int | count of Bemis-Murcko scaffold occurrences in ChEMBL |
+| qed | float | QED score |
+
+### 2. COCONUT — natural and isolated compounds
+
+`coconut_smiles.csv`
+
+### 3. HMDB — human metabolites
+
+`hmdb_smiles.csv`
+
+### 4. CompTox (phase 2, if needed)
+
+EPA CompTox — industrial/ecological chemicals. Download only if phase A shows a positive signal from the three existing sources.
+
+---
+
+## Selection strategies
+
+### Universal (all sources)
+
+| # | Name | Description |
+|---|------|-------------|
+| 1 | **Random** | Uniform random sample from all molecules in source |
+| 2 | **High QED** | Sort by QED descending, take top N — drug-like molecules from non-ChEMBL |
+| 3 | **Low QED** | Sort by QED ascending, take top N — non-druglike molecules from non-ChEMBL |
+| 4 | **High MW** | Sort by molecular weight descending, take top N — heavy molecules |
+| 5 | **Low MW** | Sort by molecular weight ascending, take top N — light molecules |
+
+### ZINC-specific (uses tanimoto_sum and scaffold_sum)
+
+| # | Name | Description |
+|---|------|-------------|
+| 6 | **Structurally close** | High `tanimoto_sum` — non-ChEMBL but similar to ChEMBL by fingerprint |
+| 7 | **Structurally far** | Low `tanimoto_sum` AND `scaffold_sum` = 0 — non-ChEMBL with novel scaffolds |
+
+---
+
+## Experiment phases
+
+### Phase A — screen sources
+
+**Goal**: determine which sources show a positive signal from non-ChEMBL additives.
+
+**Design**: 3 sources × 2 fractions × 1 strategy = **6 runs**
+- Sources: ZINC, COCONUT, HMDB
+- Fractions: 2%, 5%
+- Strategy: random (strategy 1)
+
+**Transition criterion to Phase B** (per source):
+- `score = validity × scaffold_entropy × int_div` exceeds baseline score
+- **AND**: `validity ≥ baseline`, `mean_qed ≥ baseline`, `pct_lipinski ≥ baseline`
+
+Sources meeting the criterion advance to Phase B. Sources failing all fractions are dropped.
+
+### Phase B — find best strategy per source
+
+**Goal**: for each advancing source, find the selection strategy that gives the best diversity gain.
+
+**Design**: N sources × M strategies × 1 fraction (5%)
+- ZINC: M = 7 (strategies 1–5 universal + 6, 7 ZINC-specific)
+- COCONUT, HMDB: M = 5 (strategies 1–5 universal)
+
+Select the best strategy per source by `score = validity × scaffold_entropy × int_div` (among runs meeting control metrics).
+
+### Phase C — sweep fractions with best strategy
+
+**Goal**: find the optimal fraction for each source using its best strategy.
+
+**Design**: N sources × 5 fractions × 1 strategy = **N × 5 runs**
+- Fractions: 2%, 5%, 10%, 25%, 50%
+- Strategy: best from Phase B per source
+
+### Phase D — CompTox (optional)
+
+If phases A–C confirm the hypothesis, download and prepare CompTox, then repeat Phase A with CompTox as a 4th source.
+
+---
+
+## Running an experiment
+
+1. **Prepare additive subset** locally:
+   - Read source CSV
+   - Apply selection strategy (random sample, sort by QED/MW, or sort by tanimoto_sum/scaffold_sum for ZINC)
+   - Sample N molecules (N = fraction × 500,000, size of chembl_500k_seed0.csv)
+   - Save as `<source>_<strategy>_<fraction>pct.csv`
+
+2. **Transfer additive file**:
+   ```bash
+   scp <source>_<strategy>_<fraction>pct.csv aichem:/mnt/tank/scratch/aergardt/autoresearch/data/
+   ```
+
+3. **Merge with ChEMBL**:
+   ```bash
+   ssh aichem "cd /mnt/tank/scratch/aergardt/autoresearch/data && \
+     head -1 chembl_500k_seed0.csv > mixed_<name>.csv && \
+     tail -n +2 chembl_500k_seed0.csv >> mixed_<name>.csv && \
+     tail -n +2 <additive>.csv >> mixed_<name>.csv"
+   ```
+
+4. **Run on remote** (always use `--save`):
+   ```bash
+   ssh aichem "cd /mnt/tank/scratch/aergardt/autoresearch && CUDA_VISIBLE_DEVICES=<N> PYTHONUNBUFFERED=1 nohup uv run train.py --data data/mixed_<name>.csv --save checkpoints/<name> > run_<name>.log 2>&1 &"
+   ```
+   Check free GPUs: `ssh aichem "nvidia-smi --query-gpu=index,memory.free --format=csv,noheader"`
+
+5. **Monitor**:
+   ```bash
+   ssh aichem "tail -20 /mnt/tank/scratch/aergardt/autoresearch/run_<name>.log | grep -v DEPRECATION"
+   ```
+
+6. **Extract final epoch metrics**:
+   ```bash
+   ssh aichem "grep 'Epoch 20/20' /mnt/tank/scratch/aergardt/autoresearch/run_<name>.log && \
+     grep -E 'score:|validity:|scaffold_entropy:|int_div:|mean_qed:|pct_lipinski:' \
+     /mnt/tank/scratch/aergardt/autoresearch/run_<name>.log | tail -6"
+   ```
+
+---
+
+## Output format
+
+Each epoch prints:
+```
+============================================================
+Epoch 20/20  |  loss: 0.5535  |  time: 36s  |  elapsed: 1.0min
+  score:            0.979  (validity × scaffold_entropy × int_div)
+  ---
+  validity:         0.888
+  uniqueness:       1.000
+  novelty:          0.990
+  int_div:          0.883
+  scaffold_entropy: 0.979
+  snn:              0.300
+  mean_qed:         0.147
+  pct_lipinski:     0.005
+  w1_logp:          0.147
+  w1_qed:           0.005
+  w1_mw:            7.6
 ```
 
-### 1.2 Формирование non-drug пула
+**Decision metric**: `score = validity × scaffold_entropy × int_div` (computed post-hoc)
+**Control metrics**: `validity`, `mean_qed`, `pct_lipinski`
+**Diagnostic metrics**: `snn`, `novelty`, `uniqueness`, `w1_*`
 
-1. Взять случайную выборку из каждого источника для пропорции 30/10/60:
-   - COCONUT: 30% от целевого размера non-drug пула
-   - HMDB: 10%
-   - ZINC: 60%
-2. Склеить в один файл `data/nondrug_pool.csv`
-3. Дедуплицировать по каноническому SMILES
+---
 
-### 1.3 Дедупликация с ChEMBL
+## Logging results
 
-1. Взять фиксированную выборку 500K из `chembl_clean.csv` (seed=42)
-2. Найти пересечение SMILES: `chembl_500k ∩ nondrug_pool`
-3. Записать размер пересечения в лог
-4. Удалить из non-drug пула все SMILES, присутствующие в ChEMBL
+Log to `results.tsv` (tab-separated) after each run. Keep it local — do not commit.
 
-### 1.4 Создание смешанных датасетов
-
-Для каждой доли подмешивания создать `data/mix_r{N}.csv`:
-
-| Раннер | ChEMBL (500K фикс.) | Non-drug доля | Non-drug размер | Итого |
-|--------|---------------------|---------------|-----------------|-------|
-| R0 | 500K | 0% | 0 | 500K |
-| R1 | 500K | 10% | 50K | 550K |
-| R2 | 500K | 25% | 125K | 625K |
-| R3 | 500K | 50% | 250K | 750K |
-| R4 | 500K | 75% | 375K | 875K |
-| R5 | 500K | 100% | 500K | 1M |
-
-## Фаза 2: Обучение — склеенный пул
-
-Для каждого раннера R0–R5 и каждого seed (42, 123, 456):
-
-```bash
-python common/train.py \
-  --data data/mix_r{N}.csv \
-  --epochs 20 \
-  --seed {SEED} \
-  --save exp_2_var_2/phase1/R{N}_s{SEED}
+Columns:
+```
+commit  score  dataset  phase  strategy  fraction  vocab_size  validity  mean_qed  pct_lipinski  scaffold_entropy  int_div  status  description
 ```
 
-Итого: 6 раннеров × 3 seed-а = **18 запусков**.
+- `phase`: `baseline`, `A`, `B`, `C`, or `D`
+- `strategy`: `random`, `high_qed`, `low_qed`, `high_mw`, `low_mw`, `zinc_close`, `zinc_far`
+- `fraction`: `0` (baseline), `0.02`, `0.05`, `0.10`, `0.25`, `0.50`
+- `status`: `keep` (meets criterion), `discard` (fails), `crash`
 
-## Фаза 3: Анализ Фазы 1
-
-1. Собрать `metrics.json` всех 18 запусков
-2. Для каждого раннера посчитать mean ± σ по 3 seed-ам
-3. Построить графики: доля non-drug → scaffold_entropy, int_div, validity, mean_qed, score
-4. Определить **оптимальную долю** — раннер с максимальным score при соблюдении критериев успеха
-
-### Критерии успеха (относительно R0)
-
-Гипотеза **подтверждена**, если для хотя бы одного раннера (R1–R4):
-- `score >= 1.05 × score(R0)`
-- `validity >= 0.95 × validity(R0)`
-- `mean_qed >= 0.95 × mean_qed(R0)`
-
-## Фаза 4: Разбор по источникам (оптимальная доля)
-
-Для оптимальной доли, найденной в Фазе 3, повторить эксперимент с каждым источником отдельно:
-
-| Раннер | Состав | Non-drug размер |
-|--------|--------|-----------------|
-| S-COCO | ChEMBL 500K + COCONUT | {оптимальная доля} |
-| S-HMDB | ChEMBL 500K + HMDB | {оптимальная доля} |
-| S-ZINC | ChEMBL 500K + ZINC | {оптимальная доля} |
-
-Для каждого: 3 seed-а (42, 123, 456). Итого: 3 × 3 = **9 запусков**.
-
-```bash
-python common/train.py \
-  --data data/mix_s_{SOURCE}.csv \
-  --epochs 20 \
-  --seed {SEED} \
-  --save exp_2_var_2/phase2/S_{SOURCE}_s{SEED}
+Example:
+```
+commit  score  dataset  phase  strategy  fraction  validity  mean_qed  pct_lipinski  scaffold_entropy  int_div  status  description
+a55b4ca  0.8693  chembl_500k_seed0  baseline  -  0  0.888  0.520  0.850  0.979  0.883  keep  baseline: drug-like ChEMBL 500K
+b1c2d3e  0.8812  chembl_zinc_random_02  A  random  0.02  0.890  0.525  0.855  0.985  0.890  keep  +2% ZINC improved scaffold_entropy
+c3d4e5f  0.8550  chembl_coconut_random_05  A  random  0.05  0.870  0.490  0.820  0.980  0.885  discard  +5% COCONUT broke mean_qed and pct_lipinski
 ```
 
-## Фаза 5: Итоговый анализ
+---
 
-1. Сравнить вклад каждого источника в diversity-метрики
-2. Определить, какой источник даёт лучший прирост diversity при минимальной деградации свойств
-3. Визуализация: t-SNE вложенностей генерируемых молекул (R0 vs лучший раннер)
-4. Записать вывод: гипотеза подтверждена / опровергнута, оптимальная доля и источник
+## The experiment loop
 
-## Ожидаемые результаты
+1. **Run baseline** first: `chembl_500k_seed0.csv` alone → record all metrics
+2. **Phase A**: for each source (ZINC, COCONUT, HMDB) and fraction (2%, 5%):
+   - Prepare random subset
+   - Transfer, merge, run, record
+   - Apply transition criterion
+3. **Phase B**: for each advancing source × all applicable strategies at 5%:
+   - Prepare, transfer, merge, run, record
+   - Select best strategy per source
+4. **Phase C**: for each source × best strategy × all fractions (2–50%):
+   - Prepare, transfer, merge, run, record
+   - Identify optimal fraction
+5. **Phase D** (optional): download CompTox, repeat Phase A
 
-| Раннер | scaffold_entropy | int_div | validity | mean_qed | score |
-|--------|-----------------|---------|----------|----------|-------|
-| R0 (0%) | бейслайн | бейслайн | бейслайн | бейслайн | бейслайн |
-| R1 (10%) | ↑ 5-15% | ↑ 5-10% | ≈ | ≈ | ↑ |
-| R2 (25%) | ↑ 10-25% | ↑ 10-20% | ≈ / ↓ | ↓ немного | ↑ / ≈ |
-| R3 (50%) | ↑ 20-40% | ↑ 15-30% | ↓ | ↓ | ↓ |
-| R4 (75%) | ↑↑ | ↑↑ | ↓↓ | ↓↓ | ↓↓ |
-| R5 (100%) | ↑↑↑ | ↑↑↑ | ↓↓↓ | ↓↓↓ | ↓↓↓ |
+**NEVER STOP**: do not pause between runs. The loop runs until manually interrupted.
 
-Ожидаемый оптимум: **R1 (10%) или R2 (25%)**.
-
-## Гиперпараметры (фиксированы)
-
-```
-model:        GPT, n_layer=4, n_embd=256, n_head=4 (~4M params)
-vocab:        BreakIt (фиксированный)
-max_len:      128
-batch_size:   512
-lr:           3e-4
-epochs:       20
-warmup:       5%
-scheduler:    cosine decay
-weight_decay: 0.1
-gen_count:    5000
-temperature:  1.0
-seeds:        42, 123, 456
-```
+**Goal**: Find the additive source, fraction, and selection strategy that maximizes `score = validity × scaffold_entropy × int_div` beyond the ChEMBL baseline while maintaining validity, mean_qed, and pct_lipinski.
