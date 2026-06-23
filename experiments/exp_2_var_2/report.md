@@ -268,12 +268,76 @@ All plots in `experiments/exp_2_var_2/`:
 
 ## Recommendations
 
-1. **int_div ceiling**: The consistent int_div ~0.88-0.89 across all configurations suggests an architectural or training limit. To increase diversity, consider: higher temperature at generation time, different decoding strategies (top-k/top-p), or model architecture changes (larger N_LAYER/N_EMBD).
+### 1. int_div ceiling — architectural problem
 
-2. **If diversity is not the priority**: ZINC 10-20% with zinc_close strategy improves drug-likeness (mean_qed +3.2%, validity +0.4%) at a cost of only 0.2-1.0% in composite score.
+Across all 18 pre-training experiments, `int_div` never exceeds 0.893 (baseline: 0.891). The model generates molecules with mean pairwise Tanimoto ~0.11 regardless of training data composition. This is an architectural/training limit, not a data problem.
 
-3. **For SYK-specific generation**: Fine-tuning on SYK data is more effective than pre-training data composition. The pre-training additive source has a minor effect on downstream QSAR predictions.
+| What to try | Expected effect | Cost |
+|-------------|----------------|------|
+| Temperature sweep at inference (0.5, 0.8, 1.0, 1.2, 1.5, 2.0) | More diversity, lower validity | Free, inference only |
+| Top-k / top-p sampling instead of multinomial | Diversity without full randomness | Code change |
+| Increase N_LAYER to 6–8 | More expressivity, may help diversity | Retraining |
+| Data augmentation — reverse SMILES, sorted | More diversity in training signal | Data prep |
+| Forward + reverse SMILES concatenation | Established technique for SMILES GPT | Data prep |
 
-4. **Phase C (fraction sweep) not warranted**: No strategy exceeded baseline in pre-training.
+**Fastest path**: temperature sweep on the best checkpoint. No retraining needed.
 
-5. **CompTox not recommended**: Three sources already show a consistent pattern. A fourth source is unlikely to break the int_div ceiling.
+### 2. ZINC + zinc_close — best trade-off for drug-likeness
+
+If the goal is molecule quality rather than diversity:
+
+| Metric | Baseline | ZINC close 10% | Delta |
+|--------|----------|----------------|-------|
+| validity | 0.885 | 0.888 | +0.3% |
+| mean_qed | 0.570 | 0.588 | +3.2% |
+| pct_lipinski | 0.738 | 0.768 | +4.1% |
+| scaffold_entropy | 0.980 | 0.984 | +0.4% |
+| int_div | 0.891 | 0.883 | -0.9% |
+
+ZINC close improves all drug-likeness metrics with minimal diversity loss. Worth considering for downstream drug-like molecule generation.
+
+### 3. Fine-tuning is more effective than pre-training
+
+The performance gap between models shrinks after fine-tuning on SYK data. Pre-training differences (source, fraction, strategy) have a smaller effect than the fine-tuning data itself.
+
+- **Spending effort on pre-training data composition is suboptimal.** The score difference between best and worst pre-training models is ~0.05. After fine-tuning — ~0.03.
+- **Invest in a better fine-tuning dataset.** 3176 molecules is small. More target molecules → better specialization.
+- **Fine-tuning hyperparameters are not optimized.** 15 epochs, LR=1e-5 are defaults. Worth trying:
+  - Epoch sweep (5, 10, 20, 30) — find optimum before overfitting
+  - LR sweep (1e-6, 5e-6, 1e-5, 3e-5)
+  - Mix SYK + ChEMBL (not 100% SYK) — e.g. 10–30% SYK + 70–90% ChEMBL to preserve general chemical knowledge
+
+### 4. QSAR predictions — narrow range
+
+All models generate pIC50 in 4.2–9.3, means clustered at 6.2–6.3. Experimental SYK: mean 6.56. The models produce molecules with *average* activity, not extreme.
+
+The top-10 molecules (pIC50 > 9.0) share a scaffold from the training data — the model memorizes rather than innovates.
+
+**Recommendations:**
+- For drug discovery: use **conditional generation** (target pIC50 as condition)
+- For de novo design: add **reinforcement learning** with QSAR reward
+- For model validation: run **molecular docking** (AutoDock Vina) on top predictions to verify QSAR predictions match binding affinity
+
+### 5. HMDB — not for drug discovery, but useful for specific tasks
+
+HMDB degrades all drug-likeness metrics, but after fine-tuning generates molecules with the **lowest predicted SYK activity** (mean pIC50 = 6.23). This is useful for:
+
+- Generating molecules with **minimal off-target activity** against SYK
+- Creating a **negative control dataset** for QSAR validation
+
+### 6. Prioritized next steps
+
+| Priority | Action | Expected outcome |
+|----------|--------|-----------------|
+| **P0** | Temperature sweep (0.5–2.0) on best model | Map validity vs diversity trade-off |
+| **P0** | Fine-tune with SYK + ChEMBL mix (10%, 30%, 50% SYK) | Find optimum between specialization and quality |
+| **P1** | Fine-tuning LR sweep (1e-6, 5e-6, 1e-5, 3e-5) | Optimize convergence |
+| **P1** | Expand SYK dataset (ChEMBL SYK assays, PubChem BioAssay) | More data → better specialization |
+| **P2** | Forward + reverse SMILES augmentation | Break int_div ceiling |
+| **P2** | AutoDock Vina for top-50 molecules | Validate QSAR predictions |
+| **P3** | Larger model (N_LAYER=6, N_EMBD=512) | Break int_div ceiling |
+| **P3** | Conditional generation (target pIC50) | Generate with specified activity |
+
+---
+
+**Summary**: The model architecture is the primary diversity bottleneck. Pre-training data composition is secondary. For practical drug discovery, optimizing fine-tuning (mix ratio, LR, dataset size) and adding a temperature sweep at inference gives the highest return for the lowest cost.
