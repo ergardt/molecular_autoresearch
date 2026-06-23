@@ -1,0 +1,20 @@
+commit	score	dataset	phase	strategy	fraction	vocab_size	validity	mean_qed	pct_lipinski	scaffold_entropy	int_div	uniqueness	novelty	status	description
+00106ec	0.7729	chembl_500k_seed0	baseline	-	0	168	0.885	0.570	0.738	0.980	0.891	1.0000	0.9901	keep	baseline: ChEMBL 500K
+00106ec	0.7633	chembl_zinc_random_02	A	random	0.02	168	0.880	0.569	0.737	0.982	0.884	1.0000	0.9918	discard	all control metrics below baseline
+00106ec	0.7594	chembl_zinc_random_05	A	random	0.05	168	0.875	0.573	0.745	0.982	0.883	1.0000	0.9936	discard	validity below baseline
+00106ec	0.7615	chembl_coconut_random_02	A	random	0.02	168	0.876	0.561	0.727	0.980	0.887	1.0000	0.9907	discard	all control metrics below baseline
+00106ec	0.7576	chembl_coconut_random_05	A	random	0.05	168	0.870	0.556	0.719	0.978	0.891	1.0000	0.9915	discard	all control metrics below baseline
+00106ec	0.7578	chembl_hmdb_random_02	A	random	0.02	168	0.879	0.561	0.716	0.974	0.885	0.9998	0.9932	discard	all control metrics below baseline
+00106ec	0.7536	chembl_hmdb_random_05	A	random	0.05	168	0.879	0.551	0.730	0.962	0.891	0.9995	0.9923	discard	all control metrics below baseline
+00106ec	0.7655	chembl_zinc_random_10	A	random	0.10	168	0.882	0.585	0.753	0.983	0.883	0.9998	0.9930	discard	score below baseline
+00106ec	0.7700	chembl_zinc_random_20	A	random	0.20	168	0.889	0.591	0.767	0.981	0.883	0.9998	0.9944	discard	score below baseline
+00106ec	0.7605	chembl_coconut_random_10	A	random	0.10	168	0.874	0.555	0.722	0.974	0.893	1.0000	0.9934	discard	all control metrics below baseline
+00106ec	0.7499	chembl_coconut_random_20	A	random	0.20	168	0.868	0.542	0.712	0.971	0.889	1.0000	0.9927	discard	all control metrics below baseline
+00106ec	0.7333	chembl_hmdb_random_10	A	random	0.10	168	0.874	0.526	0.677	0.941	0.892	0.9995	0.9932	discard	all control metrics below baseline
+00106ec	0.7044	chembl_hmdb_random_20	A	random	0.20	168	0.881	0.503	0.647	0.894	0.894	0.9975	0.9930	discard	all control metrics below baseline
+00106ec	0.7715	chembl_zinc_close_10	B	zinc_close	0.10	168	0.888	0.588	0.768	0.984	0.883	0.9998	0.9933	discard	closest to baseline, all controls above
+00106ec	0.7697	chembl_zinc_far_10	B	zinc_far	0.10	168	0.884	0.576	0.758	0.977	0.891	0.9998	0.9932	discard	score below baseline
+00106ec	0.7660	chembl_zinc_high_qed_10	B	high_qed	0.10	168	0.879	0.588	0.744	0.986	0.884	1.0000	0.9916	discard	validity below baseline
+00106ec	0.7640	chembl_zinc_low_mw_10	B	low_mw	0.10	168	0.888	0.577	0.750	0.967	0.889	1.0000	0.9896	discard	scaffold_entropy below baseline
+00106ec	0.7567	chembl_zinc_low_qed_10	B	low_qed	0.10	168	0.874	0.542	0.715	0.980	0.884	1.0000	0.9931	discard	all control metrics below baseline
+00106ec	0.7523	chembl_zinc_high_mw_10	B	high_mw	0.10	168	0.864	0.552	0.693	0.982	0.886	1.0000	0.9922	discard	validity and pct_lipinski below baseline

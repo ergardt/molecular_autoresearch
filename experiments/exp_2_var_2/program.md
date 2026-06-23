@@ -128,7 +128,7 @@ Sources meeting the criterion advance to Phase B. Sources failing all fractions 
 
 **Goal**: for each advancing source, find the selection strategy that gives the best diversity gain.
 
-**Design**: N sources × M strategies × 1 fraction (5%)
+**Design**: N sources × M strategies × 1 fraction (10%)
 - ZINC: M = 7 (strategies 1–5 universal + 6, 7 ZINC-specific)
 - COCONUT, HMDB: M = 5 (strategies 1–5 universal)
 
