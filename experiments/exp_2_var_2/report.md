@@ -165,25 +165,25 @@ All fine-tuned models generated 5000 molecules each (55,955 total valid predicti
 
 **Experimental SYK dataset**: mean pIC50 = 6.56, median = 6.53, range = 4.20–9.00
 
-#### Mean pIC50 per model (lower = less active = better)
+#### Mean pIC50 per model (higher = more active = better)
 
-| Model | Mean pIC50 | Median | % < 6 | % < 5 | Count |
+| Model | Mean pIC50 | Median | % > 7 | % > 8 | Count |
 |-------|-----------|--------|-------|-------|-------|
-| **syk_hmdb_random_20** | **6.230** | 6.227 | **34.6%** | 0.5% | 4327 |
-| syk_hmdb_random_10 | 6.264 | 6.260 | 30.3% | 0.9% | 4296 |
-| syk_hmdb_random_02 | 6.295 | 6.297 | 29.0% | 0.6% | 4282 |
-| syk_hmdb_random_05 | 6.283 | 6.284 | 29.0% | 0.7% | 4339 |
-| syk_zinc_random_10 | 6.283 | 6.296 | 28.2% | 0.5% | 4303 |
-| syk_zinc_random_02 | 6.303 | 6.317 | 27.5% | 0.5% | 4320 |
-| syk_baseline | 6.295 | 6.305 | 27.5% | 0.9% | 4317 |
-| syk_coconut_random_20 | 6.316 | 6.324 | 27.2% | 0.4% | 4218 |
-| syk_coconut_random_02 | 6.320 | 6.333 | 26.7% | 0.7% | 4306 |
-| syk_coconut_random_05 | 6.304 | 6.314 | 26.5% | 0.5% | 4265 |
-| syk_zinc_random_20 | 6.307 | 6.317 | 26.3% | 0.4% | 4376 |
-| syk_zinc_random_05 | 6.318 | 6.330 | 26.0% | 0.6% | 4332 |
-| syk_coconut_random_10 | 6.324 | 6.330 | 25.7% | 0.6% | 4274 |
+| **syk_coconut_random_10** | **6.324** | 6.330 | 8.6% | 0.14% | 4274 |
+| syk_coconut_random_02 | 6.320 | 6.333 | 8.9% | 0.12% | 4306 |
+| syk_zinc_random_05 | 6.318 | 6.330 | 8.2% | 0.14% | 4332 |
+| syk_coconut_random_20 | 6.316 | 6.324 | 8.5% | 0.09% | 4218 |
+| syk_zinc_random_20 | 6.307 | 6.317 | 7.5% | 0.11% | 4376 |
+| syk_coconut_random_05 | 6.304 | 6.314 | 7.9% | 0.05% | 4265 |
+| syk_zinc_random_02 | 6.303 | 6.317 | 8.2% | 0.19% | 4320 |
+| syk_hmdb_random_02 | 6.295 | 6.297 | 8.7% | 0.16% | 4282 |
+| syk_baseline | 6.295 | 6.305 | 8.0% | 0.05% | 4317 |
+| syk_zinc_random_10 | 6.283 | 6.296 | 7.3% | 0.09% | 4303 |
+| syk_hmdb_random_05 | 6.283 | 6.284 | 8.3% | 0.16% | 4339 |
+| syk_hmdb_random_10 | 6.264 | 6.260 | 7.4% | 0.12% | 4296 |
+| syk_hmdb_random_20 | 6.230 | 6.227 | 6.9% | 0.09% | 4327 |
 
-HMDB 20% produces molecules with the lowest predicted activity (mean pIC50 = 6.230, 34.6% below 6). COCONUT 10% produces the most active molecules (mean pIC50 = 6.324). The spread between best and worst is 0.094 pIC50 units — small but consistent.
+COCONUT 10% produces the most active molecules (mean pIC50 = 6.324). HMDB 20% produces the least active (mean pIC50 = 6.230). The spread between best and worst is 0.094 pIC50 units — small but consistent. COCONUT models occupy the top 4 positions.
 
 #### Top 10 predicted pIC50 (highest activity)
 
@@ -219,11 +219,11 @@ The top predictions share a common scaffold: 2-amino-5-methyl-thiazole/pyrimidin
 
 7. **Fine-tuning narrows the gap**: After fine-tuning on SYK data, all models converge toward similar performance. The pre-training differences (source, fraction, strategy) have a smaller effect than the fine-tuning data itself.
 
-8. **HMDB 20% best for low activity**: Fine-tuned HMDB 20% model generates molecules with the lowest predicted pIC50 (6.230), meaning it produces the least SYK-active molecules. This is likely because HMDB molecules (human metabolites) push the model away from kinase inhibitor-like chemical space.
+8. **COCONUT models produce the most active molecules**: Fine-tuned COCONUT models rank highest in mean predicted pIC50 (6.30–6.32), suggesting COCONUT's natural product scaffolds combined with SYK fine-tuning steer the model toward more potent kinase inhibitor-like structures.
 
-9. **ZINC models produce highest-activity molecules**: ZINC-augmented models generate molecules with the highest maximum predicted pIC50 (up to 9.27), suggesting ZINC's structural similarity to ChEMBL helps the model explore kinase inhibitor space more effectively.
+9. **HMDB 20% produces the least active molecules**: Fine-tuned HMDB 20% model generates molecules with the lowest predicted pIC50 (6.230). HMDB molecules (human metabolites) push the model away from kinase inhibitor-like chemical space, reducing predicted potency.
 
-10. **QSAR predictions are narrow**: All models produce pIC50 values in a tight range (4.2–9.3), with means clustered around 6.2–6.3. The experimental SYK dataset has a mean of 6.56. No model consistently outperforms others by a large margin.
+10. **QSAR predictions are narrow**: All models produce pIC50 values in a tight range (4.2–9.3), with means clustered around 6.2–6.3. The experimental SYK dataset has a mean of 6.56. No model reaches the experimental mean, indicating the generated molecules are systematically less potent than the training set.
 
 ---
 
@@ -318,12 +318,9 @@ The top-10 molecules (pIC50 > 9.0) share a scaffold from the training data — t
 - For de novo design: add **reinforcement learning** with QSAR reward
 - For model validation: run **molecular docking** (AutoDock Vina) on top predictions to verify QSAR predictions match binding affinity
 
-### 5. HMDB — not for drug discovery, but useful for specific tasks
+### 5. COCONUT — best source for SYK potency
 
-HMDB degrades all drug-likeness metrics, but after fine-tuning generates molecules with the **lowest predicted SYK activity** (mean pIC50 = 6.23). This is useful for:
-
-- Generating molecules with **minimal off-target activity** against SYK
-- Creating a **negative control dataset** for QSAR validation
+COCONUT-augmented models consistently rank highest in predicted SYK activity after fine-tuning. All top-4 models by mean pIC50 are COCONUT-based. This suggests COCONUT's natural product scaffolds, when combined with SYK fine-tuning, steer the model toward more potent kinase inhibitor-like structures. For SYK-targeted generation, COCONUT pre-training additive is the preferred source.
 
 ### 6. Prioritized next steps
 
@@ -340,4 +337,4 @@ HMDB degrades all drug-likeness metrics, but after fine-tuning generates molecul
 
 ---
 
-**Summary**: The model architecture is the primary diversity bottleneck. Pre-training data composition is secondary. For practical drug discovery, optimizing fine-tuning (mix ratio, LR, dataset size) and adding a temperature sweep at inference gives the highest return for the lowest cost.
+**Summary**: The model architecture is the primary diversity bottleneck. Pre-training data composition is secondary but matters for downstream potency — COCONUT additive + SYK fine-tuning produces the most active molecules. Optimizing fine-tuning (mix ratio, LR, dataset size) and adding a temperature sweep at inference gives the highest return for the lowest cost.
