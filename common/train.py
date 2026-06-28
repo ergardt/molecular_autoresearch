@@ -3,12 +3,18 @@ train.py — SMILES GPT for molecular generation.
 Character-level autoregressive transformer trained on SMILES strings.
 
 Hypothesis: including non-drug-like molecules in pretraining improves
-generation diversity without hurting validity/uniqueness/novelty.
+downstream adaptability (measured by predicted pIC50 after fine-tuning).
 
 Usage:
-    uv run train.py                       # train on data/chembl.csv
-    uv run train.py --data custom.csv     # custom dataset
-    uv run train.py --epochs 1            # run for 1 epoch
+    # Pretrain phase
+    uv run train.py --data mixed_pretrain.csv --epochs 5 --save-final ckpt/
+
+    # Fine-tune phase
+    uv run train.py --finetune --load ckpt/ --data syk_active.csv \
+        --epochs 10 --pretrain-set pretrain_smiles.txt
+
+    # Generate from checkpoint
+    uv run train.py --load ckpt/ --gen 5000
 """
 
 import json
@@ -20,6 +26,7 @@ from dataclasses import dataclass, asdict
 from pathlib import Path
 
 import numpy as np
+import warnings
 from collections import Counter
 
 import torch
@@ -54,6 +61,11 @@ LR           = 3e-4
 WEIGHT_DECAY = 0.1
 BETAS        = (0.9, 0.95)
 WARMUP_RATIO = 0.05  # fraction of total steps
+
+# Fine-tune defaults (fixed for hypothesis testing)
+FT_LR        = 1e-4
+FT_BATCH     = 64
+TOP_K        = 50  # top-K molecules by predicted pIC50 for score
 
 # ---------------------------------------------------------------------------
 # SMILES Tokenizer (BreakIt — fixed vocabulary)
@@ -263,6 +275,48 @@ def _morgan_fp(mol):
     return AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
 
 
+def _morgan_fp_array(mol) -> np.ndarray:
+    """Morgan fingerprint as numpy array for regressor."""
+    fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=2048)
+    arr = np.zeros((1, 2048), dtype=np.float32)
+    DataStructs.ConvertToNumpyArray(fp, arr[0])
+    return arr
+
+
+def _predict_pIC50(smiles_list: list[str]) -> np.ndarray:
+    """Predict pIC50 for a list of SMILES using stacking regressor.
+
+    Returns array of predicted pIC50. For invalid molecules, returns 0.
+    """
+    try:
+        import joblib
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            regressor = joblib.load("data/stacking_regressor.joblib")
+    except Exception as e:
+        print(f"  WARNING: Could not load regressor: {e}")
+        return np.zeros(len(smiles_list))
+
+    preds = np.zeros(len(smiles_list))
+    fps = []
+    for i, smi in enumerate(smiles_list):
+        mol = Chem.MolFromSmiles(smi)
+        if mol is not None:
+            fps.append(_morgan_fp_array(mol))
+        else:
+            preds[i] = 0.0
+    if fps:
+        fp_arr = np.concatenate(fps, axis=0)
+        valid_preds = regressor.predict(fp_arr)
+        # Map back
+        idx = 0
+        for i, smi in enumerate(smiles_list):
+            if Chem.MolFromSmiles(smi) is not None:
+                preds[i] = valid_preds[idx]
+                idx += 1
+    return preds
+
+
 def evaluate(
     model: GPT,
     tok: SmilesTokenizer,
@@ -302,6 +356,7 @@ def evaluate(
         return dict(validity=0.0, uniqueness=0.0, novelty=0.0,
                     int_div=0.0, mean_tanimoto=0.0, scaffold_entropy=0.0, snn=0.0,
                     mean_qed=0.0, pct_lipinski=0.0,
+                    mean_topK_pIC50=0.0, topK_scaffolds=0,
                     w1_logp=float("nan"), w1_qed=float("nan"), w1_mw=float("nan"))
 
     canonical  = [smi for smi, _ in valid_pairs]
@@ -380,7 +435,22 @@ def evaluate(
     )
     pct_lipinski = lipinski_pass / len(mols[:cap_p]) if mols else 0.0
 
-    score = validity * scaffold_entropy * int_div # decision metric: higher = better
+    # --- predicted pIC50 via stacking regressor ---
+    preds = _predict_pIC50(canonical)
+    sorted_preds = np.sort(preds)[::-1]
+    mean_topK_pIC50 = float(np.mean(sorted_preds[:TOP_K])) if len(sorted_preds) >= TOP_K else float(np.mean(sorted_preds))
+
+    # --- unique scaffolds in top-K by predicted pIC50 ---
+    topK_indices = np.argsort(-preds)[:TOP_K]
+    topK_smiles = [canonical[i] for i in topK_indices if i < len(canonical)]
+    topK_scaffolds = len(set(
+        MurckoScaffold.MurckoScaffoldSmiles(Chem.MolFromSmiles(s), includeChirality=False)
+        for s in topK_smiles
+        if Chem.MolFromSmiles(s) is not None
+    ))
+
+    # Score: scaffold_entropy * mean_topK_pIC50 (higher = better)
+    score = scaffold_entropy * mean_topK_pIC50
 
     return dict(
         score=score,
@@ -393,6 +463,8 @@ def evaluate(
         snn=snn,
         mean_qed=mean_qed,
         pct_lipinski=pct_lipinski,
+        mean_topK_pIC50=mean_topK_pIC50,
+        topK_scaffolds=topK_scaffolds,
         w1_logp=_wasserstein1d(gen_logp, ref_logp),
         w1_qed=_wasserstein1d(gen_qed,   ref_qed),
         w1_mw=_wasserstein1d(gen_mw,     ref_mw),
@@ -427,24 +499,61 @@ def count_params(model: nn.Module) -> int:
     return sum(p.numel() for p in model.parameters())
 
 
+def _save_checkpoint(model, cfg, tok, metrics, save_dir: Path):
+    """Save model checkpoint + config + tokenizer + metrics."""
+    save_dir.mkdir(parents=True, exist_ok=True)
+    state = {k.replace("_orig_mod.", ""): v for k, v in model.state_dict().items()}
+    torch.save(state, save_dir / "model.pt")
+    json.dump(asdict(cfg), (save_dir / "config.json").open("w"))
+    json.dump({
+        "stoi": tok.stoi,
+        "itos": {int(k): v for k, v in tok.itos.items()},
+    }, (save_dir / "tokenizer.json").open("w"))
+    json.dump(metrics, (save_dir / "metrics.json").open("w"), indent=2)
+
+
+def _print_metrics(metrics: dict):
+    """Print evaluation metrics."""
+    print(
+        f"  score:            {metrics['score']:.4f}  (scaffold_entropy x mean_topK_pIC50)\n"
+        f"  ---\n"
+        f"  validity:         {metrics['validity']:.3f}\n"
+        f"  uniqueness:       {metrics['uniqueness']:.3f}\n"
+        f"  novelty:          {metrics['novelty']:.3f}\n"
+        f"  int_div:          {metrics['int_div']:.3f}\n"
+        f"  mean_tanimoto:    {metrics['mean_tanimoto']:.3f}\n"
+        f"  scaffold_entropy: {metrics['scaffold_entropy']:.3f}\n"
+        f"  mean_topK_pIC50:  {metrics['mean_topK_pIC50']:.3f}\n"
+        f"  topK_scaffolds:   {metrics['topK_scaffolds']}\n"
+        f"  snn:              {metrics['snn']:.3f}\n"
+        f"  mean_qed:         {metrics['mean_qed']:.3f}\n"
+        f"  pct_lipinski:     {metrics['pct_lipinski']:.3f}\n"
+        f"  w1_logp:          {metrics['w1_logp']:.3f}\n"
+        f"  w1_qed:           {metrics['w1_qed']:.3f}\n"
+        f"  w1_mw:            {metrics['w1_mw']:.1f}"
+    )
+
+
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--data",   default=DATA_PATH, help="Path to CSV with 'smiles' column")
-    parser.add_argument("--epochs", type=int, default=EPOCHS)
-    parser.add_argument("--seed",   type=int, default=42)
-    parser.add_argument("--save",   default=None, help="Directory to save best checkpoint")
-    parser.add_argument("--load",   default=None, help="Load checkpoint directory and generate molecules")
-    parser.add_argument("--gen",    type=int, default=N_GEN, help="Number of molecules to generate")
-    parser.add_argument("--temp",   type=float, default=1.0, help="Sampling temperature")
+    parser.add_argument("--data",       default=DATA_PATH, help="Path to CSV with 'smiles' column")
+    parser.add_argument("--epochs",     type=int, default=EPOCHS)
+    parser.add_argument("--seed",       type=int, default=42)
+    parser.add_argument("--save",       default=None, help="Directory to save best checkpoint")
+    parser.add_argument("--load",       default=None, help="Load checkpoint directory")
+    parser.add_argument("--gen",        type=int, default=N_GEN, help="Number of molecules to generate")
+    parser.add_argument("--temp",       type=float, default=1.0, help="Sampling temperature")
+    parser.add_argument("--finetune",   action="store_true", help="Fine-tune loaded checkpoint on --data")
+    parser.add_argument("--save-final", default=None, help="Save final checkpoint (pretrain phase, no eval)")
+    parser.add_argument("--pretrain-set", default=None, help="File with pretrain SMILES for novelty calc")
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    # --- load checkpoint and generate ---
-    if args.load:
+    # --- load checkpoint and generate (no --finetune) ---
+    if args.load and not args.finetune:
         model, tok = GPT.load(args.load, device)
         print(f"Loaded {args.load} | {count_params(model) / 1e6:.1f}M params")
-        # Fix seed for reproducible generation
         random.seed(args.seed)
         torch.manual_seed(args.seed)
         if torch.cuda.is_available():
@@ -456,25 +565,94 @@ def main():
         print(f"Generated {args.gen} molecules -> {out}")
         return
 
+    # --- fine-tune phase ---
+    if args.load and args.finetune:
+        random.seed(args.seed)
+        torch.manual_seed(args.seed)
+        print(f"Device: {device}")
+        print(f"Fine-tuning from {args.load} on {args.data}")
+
+        model, tok = GPT.load(args.load, device)
+        model = torch.compile(model)
+        cfg = model.cfg
+
+        # Load fine-tune data
+        smiles = load_smiles(args.data)
+        seqs = encode_dataset(smiles, tok)
+        steps_per_epoch = len(seqs) // FT_BATCH
+        total_steps = steps_per_epoch * args.epochs
+        print(f"Fine-tune: {len(smiles):,} molecules, {steps_per_epoch} steps/epoch, {total_steps} total")
+
+        # Load pretrain set for novelty
+        if args.pretrain_set:
+            train_set = set(Path(args.pretrain_set).read_text().strip().split("\n"))
+        else:
+            train_set = set(smiles)
+
+        optimizer = torch.optim.AdamW(
+            model.parameters(), lr=FT_LR, weight_decay=WEIGHT_DECAY, betas=BETAS
+        )
+
+        step = 0
+        best_score = -1.0
+        t0 = time.time()
+
+        for epoch in range(1, args.epochs + 1):
+            model.train()
+            epoch_loss = 0.0
+            epoch_t0 = time.time()
+
+            for x, y in iter_batches(seqs, FT_BATCH, device):
+                lr = FT_LR * get_lr(step, total_steps)
+                for pg in optimizer.param_groups:
+                    pg["lr"] = lr
+                loss = model(x, y)
+                loss.backward()
+                torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
+                optimizer.zero_grad(set_to_none=True)
+                epoch_loss += loss.item()
+                step += 1
+
+            avg_loss = epoch_loss / max(steps_per_epoch, 1)
+            epoch_time = time.time() - epoch_t0
+            elapsed = time.time() - t0
+
+            print(f"\n{'='*60}")
+            print(f"FT Epoch {epoch}/{args.epochs}  |  loss: {avg_loss:.4f}  |  "
+                  f"time: {epoch_time:.0f}s  |  elapsed: {elapsed/60:.1f}min")
+
+            metrics = evaluate(model, tok, train_set)
+            _print_metrics(metrics)
+
+            if metrics['score'] > best_score:
+                best_score = metrics['score']
+                if args.save:
+                    _save_checkpoint(model, cfg, tok, metrics, Path(args.save))
+                    print(f"  ** saved best (score={best_score:.4f}) to {args.save}")
+
+        # Always save final fine-tune checkpoint
+        if args.save:
+            _save_checkpoint(model, cfg, tok, metrics, Path(args.save))
+            print(f"Saved final fine-tune checkpoint to {args.save}")
+        return
+
+    # --- pretrain phase ---
     random.seed(args.seed)
     torch.manual_seed(args.seed)
     print(f"Device: {device}")
 
-    # --- data ---
-    smiles   = load_smiles(args.data)
-    train_set = set(smiles)
-
+    smiles = load_smiles(args.data)
     tok = SmilesTokenizer()
     tok.build_vocab(smiles)
     print(f"Vocab size: {tok.vocab_size}")
 
     seqs = encode_dataset(smiles, tok)
     steps_per_epoch = len(seqs) // BATCH_SIZE
-    total_steps     = steps_per_epoch * args.epochs
+    total_steps = steps_per_epoch * args.epochs
     print(f"Steps per epoch: {steps_per_epoch:,}  |  Total: {total_steps:,}")
 
-    # --- model ---
-    cfg   = GPTConfig(vocab_size=tok.vocab_size)
+    cfg = GPTConfig(vocab_size=tok.vocab_size)
     model = GPT(cfg).to(device)
     model = torch.compile(model)
     print(f"Parameters: {count_params(model) / 1e6:.1f}M")
@@ -483,14 +661,13 @@ def main():
         model.parameters(), lr=LR, weight_decay=WEIGHT_DECAY, betas=BETAS
     )
 
-    # --- training loop ---
-    step      = 0
-    best_score = -1.0
-    t0         = time.time()
+    step = 0
+    t0 = time.time()
+
     for epoch in range(1, args.epochs + 1):
         model.train()
         epoch_loss = 0.0
-        epoch_t0   = time.time()
+        epoch_t0 = time.time()
 
         for x, y in iter_batches(seqs, BATCH_SIZE, device):
             lr = LR * get_lr(step, total_steps)
@@ -504,47 +681,26 @@ def main():
             epoch_loss += loss.item()
             step += 1
 
-        avg_loss    = epoch_loss / steps_per_epoch
-        epoch_time  = time.time() - epoch_t0
-        elapsed     = time.time() - t0
+        avg_loss = epoch_loss / steps_per_epoch
+        epoch_time = time.time() - epoch_t0
+        elapsed = time.time() - t0
 
         print(f"\n{'='*60}")
         print(f"Epoch {epoch}/{args.epochs}  |  loss: {avg_loss:.4f}  |  "
               f"time: {epoch_time:.0f}s  |  elapsed: {elapsed/60:.1f}min")
 
-        metrics = evaluate(model, tok, train_set)
-        print(
-            f"  score:            {metrics['score']:.4f}  (validity × scaffold_entropy x int_div)\n"
-            f"  ---\n"
-            f"  validity:         {metrics['validity']:.3f}\n"
-            f"  uniqueness:       {metrics['uniqueness']:.3f}\n"
-            f"  novelty:          {metrics['novelty']:.3f}\n"
-            f"  int_div:          {metrics['int_div']:.3f}\n"
-            f"  mean_tanimoto:    {metrics['mean_tanimoto']:.3f}\n"
-            f"  scaffold_entropy: {metrics['scaffold_entropy']:.3f}\n"
-
-            f"  snn:              {metrics['snn']:.3f}\n"
-            f"  mean_qed:         {metrics['mean_qed']:.3f}\n"
-            f"  pct_lipinski:     {metrics['pct_lipinski']:.3f}\n"
-            f"  w1_logp:          {metrics['w1_logp']:.3f}\n"
-            f"  w1_qed:           {metrics['w1_qed']:.3f}\n"
-            f"  w1_mw:            {metrics['w1_mw']:.1f}"
-        )
-
-        if metrics['score'] > best_score:
-            best_score = metrics['score']
-            if args.save:
-                save_dir = Path(args.save)
-                save_dir.mkdir(parents=True, exist_ok=True)
-                state = {k.replace("_orig_mod.", ""): v for k, v in model.state_dict().items()}
-                torch.save(state, save_dir / "model.pt")
-                json.dump(asdict(cfg), (save_dir / "config.json").open("w"))
-                json.dump({
-                    "stoi": tok.stoi,
-                    "itos": {int(k): v for k, v in tok.itos.items()},
-                }, (save_dir / "tokenizer.json").open("w"))
-                json.dump(metrics, (save_dir / "metrics.json").open("w"), indent=2)
-                print(f"  ** saved best (score={best_score:.4f}) to {save_dir}")
+    # Save final checkpoint for pretrain
+    if args.save_final:
+        save_dir = Path(args.save_final)
+        save_dir.mkdir(parents=True, exist_ok=True)
+        state = {k.replace("_orig_mod.", ""): v for k, v in model.state_dict().items()}
+        torch.save(state, save_dir / "model.pt")
+        json.dump(asdict(cfg), (save_dir / "config.json").open("w"))
+        json.dump({
+            "stoi": tok.stoi,
+            "itos": {int(k): v for k, v in tok.itos.items()},
+        }, (save_dir / "tokenizer.json").open("w"))
+        print(f"Saved final pretrain checkpoint to {save_dir}")
 
 
 if __name__ == "__main__":
