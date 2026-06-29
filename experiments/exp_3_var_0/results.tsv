@@ -1,0 +1,2 @@
+commit	score	mean_topK_pIC50	scaffold_entropy	topK_scaffolds	validity	memory_gb	status	description
+e80f93a	8.9492	9.482	0.944	27	0.666	0.0	keep	500K ChEMBL random baseline, pretrain 5ep, finetune 10ep (best epoch 3)
