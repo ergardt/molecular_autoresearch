@@ -118,10 +118,23 @@ def _smiles_column(df: pd.DataFrame) -> str:
 
 
 def load_smiles(path: str) -> pd.Series:
-    """Загрузить SMILES из CSV, канонизировать, отфильтровать валидные."""
-    df = pd.read_csv(_resolve(path))
-    col = _smiles_column(df)
-    raw = df[col].dropna().astype(str).str.strip()
+    """Загрузить SMILES из CSV, канонизировать, отфильтровать валидные.
+
+    Поддерживает два формата:
+    - CSV со столбцом 'smiles' (заголовок)
+    - Одна SMILES на строку (без заголовка)
+    """
+    resolved = _resolve(path)
+    df = pd.read_csv(resolved)
+
+    # Handle headerless files (one SMILES per line)
+    if "smiles" not in [c.lower() for c in df.columns]:
+        # Single column, no header — treat as SMILES
+        col = df.columns[0]
+        raw = df[col].dropna().astype(str).str.strip()
+    else:
+        col = _smiles_column(df)
+        raw = df[col].dropna().astype(str).str.strip()
 
     # Take first SMILES if multiple (separated by space)
     raw = raw.str.split().str[0]
@@ -143,7 +156,7 @@ def load_smiles(path: str) -> pd.Series:
 
 def load_full_df(path: str) -> pd.DataFrame:
     """Загрузить полный DataFrame (для стратегий, needing additional columns)."""
-    return pd.read_csv(_resolve(path))
+    return pd.read_csv(_resolve(path), header=0)
 
 
 # ===========================================================================
