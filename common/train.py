@@ -442,12 +442,16 @@ def evaluate(
 
     # --- unique scaffolds in top-K by predicted pIC50 ---
     topK_indices = np.argsort(-preds)[:TOP_K]
-    topK_smiles = [canonical[i] for i in topK_indices if i < len(canonical)]
-    topK_scaffolds = len(set(
-        MurckoScaffold.MurckoScaffoldSmiles(Chem.MolFromSmiles(s), includeChirality=False)
-        for s in topK_smiles
-        if Chem.MolFromSmiles(s) is not None
-    ))
+    topK_scaffold_set = set()
+    for i in topK_indices:
+        if i >= len(mols):
+            continue
+        try:
+            s = MurckoScaffold.MurckoScaffoldSmiles(mol=mols[i], includeChirality=False)
+            topK_scaffold_set.add(s)
+        except Exception:
+            pass
+    topK_scaffolds = len(topK_scaffold_set)
 
     # Score: scaffold_entropy * mean_topK_pIC50 (higher = better)
     score = scaffold_entropy * mean_topK_pIC50
