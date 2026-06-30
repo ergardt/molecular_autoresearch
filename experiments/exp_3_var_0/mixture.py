@@ -65,7 +65,7 @@ SEED = 42
 #       }
 
 MIXTURE_CONFIG = {
-    "data/chembl.csv": (500000, "most_non_druglike"),
+    "data/chembl.csv": (500000, "scaffold_first"),
 }
 
 # Путь к референсному сэмпу ChEMBL для S3 (farthest_from_ref)
