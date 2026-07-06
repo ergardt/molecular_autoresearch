@@ -65,7 +65,7 @@ SEED = 42
 #       }
 
 MIXTURE_CONFIG = {
-    "data/coconut_smiles.csv": (500000, "scaffold_first"),
+    "data/coconut_smiles.csv": (500000, "random"),
 }
 
 # Путь к референсному сэмпу ChEMBL для S3 (farthest_from_ref)
