@@ -16,3 +16,4 @@ f49ddc9	9.0209	9.455	0.954	31	0.633	0.0	discard	200K ChEMBL random + 300K ZINC f
 5ad6456	8.9899	9.455	0.951	31	0.633	0.0	discard	400K ZINC farthest + 100K COCONUT scaffold_first (best epoch 2)
 syk_ref	8.7017	9.903	0.879	33	1.000	0.0	reference	SYK inhibitors reference set (3176 molecules)
 633422d	8.9382	9.439	0.947	34	0.578	0.0	discard	450K ZINC farthest + 50K HMDB random (best epoch 3)
+afe023a	8.9448	9.288	0.963	28	0.502	0.0	discard	500K ZINC random (best epoch 2)
