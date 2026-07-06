@@ -18,3 +18,4 @@ syk_ref	8.7017	9.903	0.879	33	1.000	0.0	reference	SYK inhibitors reference set (
 633422d	8.9382	9.439	0.947	34	0.578	0.0	discard	450K ZINC farthest + 50K HMDB random (best epoch 3)
 afe023a	8.9448	9.288	0.963	28	0.502	0.0	discard	500K ZINC random (best epoch 2)
 4aae7ea	8.7288	9.498	0.919	23	0.483	0.0	discard	500K COCONUT scaffold_first (best epoch 3)
+7e6c099	8.8121	9.505	0.927	19	0.456	0.0	discard	500K COCONUT random (best epoch 3)
