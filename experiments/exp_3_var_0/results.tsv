@@ -1,2 +1,18 @@
 commit	score	mean_topK_pIC50	scaffold_entropy	topK_scaffolds	validity	memory_gb	status	description
-e80f93a	8.9492	9.482	0.944	27	0.666	0.0	keep	500K ChEMBL random baseline, pretrain 5ep, finetune 10ep (best epoch 3)
+e80f93a	8.9492	9.482	0.944	27	0.666	0.0	keep	500K ChEMBL random baseline (best epoch 3)
+b08dfea	8.6037	9.600	0.896	15	0.784	0.0	discard	400K ChEMBL + 100K COCONUT scaffold_first
+1f52029	8.5878	9.606	0.894	18	0.798	0.0	discard	475K ChEMBL + 25K COCONUT scaffold_first
+79a8f94	8.5674	9.623	0.890	15	0.796	0.0	discard	475K ChEMBL + 25K HMDB property_coverage
+3125b83	8.9918	9.519	0.945	31	0.712	0.0	keep	500K ChEMBL scaffold_first (best epoch 3)
+1d8235f	8.9922	9.473	0.949	32	0.646	0.0	discard	475K ChEMBL scaffold_first + 25K ZINC farthest (best epoch 2)
+d768e30	9.0934	9.375	0.970	31	0.506	0.0	keep	500K ZINC farthest_from_ref (best epoch 2) BEST
+0e0c3f7	9.0296	9.569	0.944	30	0.689	0.0	discard	250K ChEMBL + 250K ZINC farthest (best epoch 3)
+633422d	8.9893	9.532	0.943	22	0.644	0.0	discard	125K ChEMBL + 375K ZINC farthest (best epoch 3)
+355ba09	8.6373	9.610	0.899	19	0.752	0.0	discard	200K ChEMBL scaffold_first + 300K ZINC farthest (best epoch 9)
+ef3499b	8.9807	9.532	0.942	22	0.718	0.0	discard	300K ChEMBL random + 200K ZINC farthest (best epoch 3)
+dd3d294	9.0120	9.343	0.965	30	0.617	0.0	discard	100K ChEMBL random + 400K ZINC farthest (best epoch 2)
+961101a	9.0010	9.455	0.952	31	0.633	0.0	discard	150K ChEMBL random + 350K ZINC farthest (best epoch 3)
+f49ddc9	9.0209	9.455	0.954	31	0.633	0.0	discard	200K ChEMBL random + 300K ZINC farthest (best epoch 1)
+5ad6456	8.9899	9.455	0.951	31	0.633	0.0	discard	400K ZINC farthest + 100K COCONUT scaffold_first (best epoch 2)
+syk_ref	8.7017	9.903	0.879	33	1.000	0.0	reference	SYK inhibitors reference set (3176 molecules)
+633422d	8.9382	9.439	0.947	34	0.578	0.0	discard	450K ZINC farthest + 50K HMDB random (best epoch 3)

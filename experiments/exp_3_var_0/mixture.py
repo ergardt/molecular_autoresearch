@@ -65,8 +65,7 @@ SEED = 42
 #       }
 
 MIXTURE_CONFIG = {
-    "data/zinc_vs_chembl_full_QED.csv": (450000, "farthest_from_ref"),
-    "data/hmdb_smiles.csv": (50000, "random"),
+    "data/zinc_vs_chembl_full_QED.csv": (500000, "most_non_druglike"),
 }
 
 # Путь к референсному сэмпу ChEMBL для S3 (farthest_from_ref)
