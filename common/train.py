@@ -40,8 +40,7 @@ from rdkit.Chem.Scaffolds import MurckoScaffold
 
 from breakit_tokenizer import tokenize as _breakit_tokenize, build_vocab as _build_breakit_vocab, PAD, BOS, EOS, UNK
 
-# Note: RDKit здесь только для evaluate(). Подготовка данных — в prepare_data.py
-
+# Note: RDKit is used only in evaluate(). Data preparation is handled in prepare_data.py
 # ---------------------------------------------------------------------------
 # Hyperparameters
 # ---------------------------------------------------------------------------
