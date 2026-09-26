@@ -1,4 +1,4 @@
-# Experiment 3 var 0: Non-drug-like pretraining diversity → SYK adaptability
+# Experiment: Non-drug-like Pretraining Diversity → SYK Adaptability
 
 ## Hypothesis
 
@@ -6,25 +6,32 @@ Adding non-drug-like molecular structures to pretraining data improves
 predicted pIC50 after fine-tuning on SYK inhibitors, because structural
 diversity increases the model's adaptability to the target space.
 
+---
+
 ## Setup
 
 To set up a new run:
 
-1. **Confirm branch**: You are on branch `run_exp_3_var_0`. Do NOT create a new branch.
-2. **Read the in-scope files**:
-   - `common/train.py` — two-phase training (pretrain + fine-tune). Do NOT modify.
-   - `common/prepare_data.py` — data filtering. Do NOT modify.
-   - `common/breakit_tokenizer.py` — SMILES tokenizer. Do NOT modify.
-   - `experiments/exp_3_var_0/mixture.py` — THE ONLY FILE YOU MODIFY. Data mixture configuration.
-3. **Verify data exists on cluster**: All runs execute on the cluster. Verify:
+1. **Confirm branch**:  
+   You are on branch `exp_1`.  
+   Do NOT create a new branch.
+
+2. **Read the in-scope files** (do not modify unless explicitly allowed):
+   - `common/train.py` — two-phase training (pretrain + fine-tune). **Do NOT modify.**
+   - `common/prepare_data.py` — data filtering. **Do NOT modify.**
+   - `common/breakit_tokenizer.py` — SMILES tokenizer. **Do NOT modify.**
+   - `experiments/mixture.py` — **THE ONLY FILE YOU MODIFY.** Data mixture configuration.
+
+3. **Verify data exists on compute cluster**:
+
    ```bash
-   ssh aichem "ls -lh /mnt/tank/scratch/aergardt/molecular_autoresearch/data/"
+   ssh <cluster_host> "ls -lh /path/to/project/data/"
    ```
    Expected files: `chembl.csv`, `coconut_smiles.csv`, `hmdb_smiles.csv`,
    `zinc_vs_chembl_full_QED.csv`, `syk_inhibitors.csv`, `stacking_regressor.joblib`.
 3. **Prepare SYK active subset**: Filter `syk_inhibitors.csv` to keep only pIC50 > 7
    (~1900 molecules). Save as `data/syk_active.csv` on the cluster.
-4. **Initialize results.tsv**: Create `experiments/exp_3_var_0/results.tsv` with header row.
+4. **Initialize results.tsv**: Create `experiments/results.tsv` with header row.
 5. **Confirm and go**.
 
 ## What You Can Do
@@ -56,10 +63,11 @@ Each experiment has TWO phases. All commands run on the cluster via SSH.
 
 ### Phase 1: Create data mixture
 ```bash
-ssh aichem "cd /mnt/tank/scratch/aergardt/molecular_autoresearch/experiments/exp_3_var_0 && \
-    python mixture.py"                     # creates mixed_pretrain.csv
-ssh aichem "cd /mnt/tank/scratch/aergardt/molecular_autoresearch/experiments/exp_3_var_0 && \
-    python mixture.py --dry-run"           # preview without computing
+ssh <cluster_host> "cd /path/to/project/experiments/exp_3_var_0 && \
+    python mixture.py"
+
+ssh <cluster_host> "cd /path/to/project/experiments/exp_3_var_0 && \
+    python mixture.py --dry-run"
 ```
 
 The mixture is cached by config hash. If `MIXTURE_CONFIG` hasn't changed,
@@ -68,21 +76,21 @@ the script skips and uses the cached `mixed_pretrain.csv`.
 ### Phase 2: Pretrain + Fine-tune + Evaluate
 ```bash
 # Pretrain (no evaluation during training)
-ssh aichem "cd /mnt/tank/scratch/aergardt/molecular_autoresearch && \
-    uv run common/train.py \
-    --data experiments/exp_3_var_0/mixed_pretrain.csv \
+ssh <cluster_host> "cd /path/to/project && \
+    python common/train.py \
+    --data experiments/mixed_pretrain.csv \
     --epochs 5 \
-    --save-final experiments/exp_3_var_0/checkpoints/exp_N"
+    --save-final experiments/checkpoints/exp_N"
 
 # Fine-tune on active SYK inhibitors (pIC50 > 7) + evaluate
-ssh aichem "cd /mnt/tank/scratch/aergardt/molecular_autoresearch && \
-    uv run common/train.py \
+ssh <cluster_host> "cd /path/to/project && \
+    python common/train.py \
     --finetune \
-    --load experiments/exp_3_var_0/checkpoints/exp_N \
+    --load experiments/checkpoints/exp_N \
     --data data/syk_active.csv \
     --epochs 10 \
-    --pretrain-set experiments/exp_3_var_0/pretrain_smiles.txt \
-    --save experiments/exp_3_var_0/checkpoints/exp_N_ft"
+    --pretrain-set experiments/pretrain_smiles.txt \
+    --save experiments/checkpoints/exp_N_ft"
 ```
 
 The final `score` is the best score achieved during fine-tuning (saved in `metrics.json`).
@@ -125,7 +133,7 @@ Sum of all counts must equal `TOTAL_SIZE`.
 
 ## Logging Results
 
-After each experiment, log to `experiments/exp_3_var_0/results.tsv`:
+After each experiment, log to `experiments/results.tsv`:
 
 ```
 commit	score	mean_topK_pIC50	scaffold_entropy	topK_scaffolds	validity	memory_gb	status	description
